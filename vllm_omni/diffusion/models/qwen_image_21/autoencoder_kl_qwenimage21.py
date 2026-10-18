@@ -1265,7 +1265,8 @@ class AutoencoderKLQwenImage21(ModelMixin, AutoencoderMixin, ConfigMixin, FromOr
         self.tile_sample_min_width = 512
 
         # The minimal distance between two spatial tiles (75% of the tile
-        # size, i.e. 25% overlap)
+        # size, i.e. 25% overlap). At decode time it is an upper bound on the
+        # spacing: the actual starts are spread evenly, see _tile_starts.
         self.tile_sample_stride_height = 384
         self.tile_sample_stride_width = 384
 
@@ -1572,17 +1573,27 @@ class AutoencoderKLQwenImage21(ModelMixin, AutoencoderMixin, ConfigMixin, FromOr
     def _tile_starts(size: int, tile_min: int, stride: int) -> list[int]:
         r"""Start offset of every tile that covers a ``size``-cell axis.
 
-        Tiles are placed every ``stride`` cells, except that the trailing tile is
-        snapped back to ``size - tile_min`` so that it keeps the full decode
-        window. A trailing tile narrower than ``tile_min`` decodes with less
-        context than its neighbours, which leaves a visible seam that the blend
-        does not hide (vllm-omni#8850).
+        The starts are spread evenly over ``[0, size - tile_min]``: every tile
+        keeps the full decode window, and each pair of neighbours overlaps by
+        roughly the same amount. ``stride`` is therefore an upper bound on the
+        spacing, not the exact spacing.
+
+        Two layouts are wrong here (vllm-omni#8850). Stepping by ``stride`` until
+        it runs out of axis clips the trailing tile at the border; a tile
+        narrower than ``tile_min`` decodes with less context than its neighbours
+        and leaves a seam the blend cannot hide. Snapping only the trailing tile
+        fixes that but leaves one unusually wide cross-fade and can make the last
+        blend read a region that was already blended.
         """
         if size <= tile_min:
             return [0]
-        starts = list(range(0, size - tile_min + 1, stride))
-        if starts[-1] != size - tile_min:
-            starts.append(size - tile_min)
+        span = size - tile_min
+        count = math.ceil(span / stride) + 1  # fewest tiles whose spacing stays <= stride
+        base, extra = divmod(span, count - 1)
+        starts, offset = [0], 0
+        for n in range(count - 1):
+            offset += base + (1 if n < extra else 0)
+            starts.append(offset)
         return starts
 
     @_with_cudnn_deterministic
@@ -1612,10 +1623,9 @@ class AutoencoderKLQwenImage21(ModelMixin, AutoencoderMixin, ConfigMixin, FromOr
             sample_height = sample_height // self.config.patch_size
             sample_width = sample_width // self.config.patch_size
 
-        # Split z into overlapping tiles and decode them separately. The tiles
-        # have an overlap to avoid seams between tiles, and the trailing tile is
-        # snapped back to the border so that it keeps the full decode window
-        # (see _tile_starts).
+        # Split z into overlapping tiles and decode them separately. The starts
+        # are spread evenly so every tile keeps the full decode window and the
+        # blends stay similar in width (see _tile_starts).
         starts_height = self._tile_starts(height, tile_latent_min_height, tile_latent_stride_height)
         starts_width = self._tile_starts(width, tile_latent_min_width, tile_latent_stride_width)
         # Decoded cells contributed by one latent cell, before unpatchify.

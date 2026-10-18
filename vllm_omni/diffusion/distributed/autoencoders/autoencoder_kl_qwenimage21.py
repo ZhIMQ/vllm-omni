@@ -44,10 +44,9 @@ class DistributedAutoencoderKLQwenImage21(AutoencoderKLQwenImage21, DistributedV
             sample_height = sample_height // self.config.patch_size
             sample_width = sample_width // self.config.patch_size
 
-        # Split z into overlapping tiles and decode them separately. The tiles
-        # have an overlap to avoid seams between tiles, and the trailing tile is
-        # snapped back to the border so that it keeps the full decode window
-        # (see AutoencoderKLQwenImage21._tile_starts, vllm-omni#8850).
+        # Split z into overlapping tiles and decode them separately. The starts
+        # are spread evenly so every tile keeps the full decode window (see
+        # AutoencoderKLQwenImage21._tile_starts, vllm-omni#8850).
         starts_height = self._tile_starts(height, tile_latent_min_height, tile_latent_stride_height)
         starts_width = self._tile_starts(width, tile_latent_min_width, tile_latent_stride_width)
         # Decoded cells contributed by one latent cell, before unpatchify.
