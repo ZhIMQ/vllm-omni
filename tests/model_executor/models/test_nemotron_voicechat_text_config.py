@@ -83,3 +83,25 @@ def test_skeleton_config_fails_loudly() -> None:
     cfg = NemotronVoiceChatConfig()
     with pytest.raises(ValueError, match="num_attention_heads"):
         cfg.get_text_config()
+
+
+def test_double_nested_backbone_is_unwrapped(monkeypatch) -> None:
+    inner = PretrainedConfig(num_attention_heads=40, hidden_size=4480)
+    middle = PretrainedConfig()
+    middle.text_config = inner
+    outer = PretrainedConfig()
+    outer.text_config = middle
+
+    cfg = _config_with_backbone(monkeypatch, outer)
+    assert cfg.get_text_config() is inner
+
+
+def test_placeholder_heads_does_not_stop_unwrapping(monkeypatch) -> None:
+    # An outer composite may carry a placeholder `num_attention_heads = None`
+    # while the real head counts live on the nested `text_config`.
+    inner = PretrainedConfig(num_attention_heads=40, hidden_size=4480)
+    outer = PretrainedConfig(num_attention_heads=None)
+    outer.text_config = inner
+
+    cfg = _config_with_backbone(monkeypatch, outer)
+    assert cfg.get_text_config() is inner

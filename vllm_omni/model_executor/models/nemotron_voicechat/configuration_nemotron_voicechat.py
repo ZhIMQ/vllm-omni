@@ -66,7 +66,7 @@ def _normalize_text_config(config: PretrainedConfig) -> PretrainedConfig:
     ``get_text_config()`` (it does not recurse), so unwrap up to two levels here.
     """
     for _ in range(2):
-        if hasattr(config, "num_attention_heads"):
+        if getattr(config, "num_attention_heads", None) is not None:
             return config
         nested = getattr(config, "text_config", None)
         if not isinstance(nested, PretrainedConfig):
@@ -244,7 +244,7 @@ class NemotronVoiceChatConfig(PretrainedConfig):
         # vLLM inspects the returned object directly (``hasattr`` only), so the
         # adapter must hand over a config that carries the head counts.
         text_config = _normalize_text_config(text_config)
-        if not hasattr(text_config, "num_attention_heads"):
+        if getattr(text_config, "num_attention_heads", None) is None:
             source = _text_config_source(self)
             raise ValueError(
                 f"Resolved NemotronVoiceChat thinker text config is {type(text_config).__name__!r}, "
