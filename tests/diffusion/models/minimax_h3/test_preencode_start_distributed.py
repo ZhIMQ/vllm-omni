@@ -136,7 +136,10 @@ def test_preencode_start_keeps_vae_ranks_consistent(tmp_path, ranks, fail_start)
         for worker in workers:
             worker.join(timeout=max(0, deadline - time.monotonic()))
         assert not any(worker.is_alive() for worker in workers), "MP4 prestart left a VAE rank hanging"
-        assert all(worker.exitcode == 0 for worker in workers)
+        exitcodes = {rank: worker.exitcode for rank, worker in enumerate(workers)}
+        assert all(code == 0 for code in exitcodes.values()), (
+            f"workers exited non-zero: {exitcodes} (ranks={tuple(ranks)}, fail_start={fail_start})"
+        )
         for rank in ranks:
             result = json.loads((tmp_path / f"rank-{rank}.json").read_text())
             owner = rank == ranks[0]
