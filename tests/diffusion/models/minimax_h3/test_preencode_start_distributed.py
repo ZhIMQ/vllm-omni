@@ -31,6 +31,9 @@ def _wait_for_peers() -> None:
     Every rank reaches teardown, so a barrier over the default group restores
     the ordering.
     """
+    if not dist.is_initialized():
+        # Nothing to synchronise: this rank never established a default group.
+        return
     try:
         dist.barrier()
     except RuntimeError:
